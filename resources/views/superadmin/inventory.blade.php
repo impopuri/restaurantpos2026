@@ -25,8 +25,8 @@
         <section class="inventory-stock-list">
             <h2>Stock on hand</h2>
             @foreach ($inventoryItems as $item)
-                <article class="inventory-stock-row">
-                    <div class="inventory-item-title"><strong>{{ $item->name }}</strong><span>{{ number_format((float) $item->quantity, 3) }} {{ $item->unit }} available</span></div>
+                <article class="inventory-stock-row" data-inventory-id="{{ $item->id }}">
+                    <div class="inventory-item-title"><strong>{{ $item->name }}</strong><span data-stock-quantity data-unit="{{ $item->unit }}">{{ number_format((float) $item->quantity, 3) }} {{ $item->unit }} available</span></div>
                     <form method="POST" action="{{ route('superadmin.inventory.adjust', $item) }}" class="stock-adjust-form">
                         @csrf
                         <label>Amount<input name="adjustment" type="number" min="0.001" step="0.001" required></label>
@@ -51,7 +51,7 @@
                         <header><strong>{{ $menuItem->name }}</strong><span>{{ ucfirst(strtolower($menuItem->category)) }}</span></header>
                         <ul>
                             @forelse ($recipes->where('menu_item_id', $menuItem->id) as $recipe)
-                                <li>{{ $recipe->inventoryItem->name }}: {{ rtrim(rtrim(number_format((float) $recipe->quantity_per_item, 3), '0'), '.') }} {{ $recipe->inventoryItem->unit }}
+                                <li data-recipe-id="{{ $recipe->id }}" data-inventory-id="{{ $recipe->inventory_item_id }}"><span>{{ $recipe->inventoryItem->name }}: {{ rtrim(rtrim(number_format((float) $recipe->quantity_per_item, 3), '0'), '.') }} {{ $recipe->inventoryItem->unit }}</span>
                                     <form method="POST" action="{{ route('superadmin.inventory.recipes.destroy', $recipe) }}">@csrf @method('DELETE')<button class="text-button remove-button" type="submit">Remove</button></form>
                                 </li>
                             @empty
@@ -73,4 +73,118 @@
         </section>
     </section>
 </main>
+<script>
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+    function showFormStatus(form, message, isError = false) {
+        let status = form.querySelector('[data-form-status]');
+        if (!status) {
+            status = document.createElement('p');
+            status.dataset.formStatus = '';
+            status.setAttribute('role', isError ? 'alert' : 'status');
+            form.append(status);
+        }
+        status.textContent = message;
+        status.classList.toggle('field-error', isError);
+        status.classList.toggle('status-message', !isError);
+    }
+
+    async function submitInventoryForm(form) {
+        const button = form.querySelector('button[type="submit"]');
+        const originalText = button?.textContent;
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Saving...';
+        }
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: new FormData(form),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || 'Unable to save changes.');
+            }
+            return result;
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
+    document.querySelectorAll('.stock-adjust-form').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const result = await submitInventoryForm(form);
+                const row = form.closest('.inventory-stock-row');
+                const stockQuantity = row.querySelector('[data-stock-quantity]');
+                stockQuantity.textContent = `${Number(result.quantity).toFixed(3)} ${stockQuantity.dataset.unit} available`;
+                showFormStatus(form, result.message);
+            } catch (error) {
+                showFormStatus(form, error.message, true);
+            }
+        });
+    });
+
+    document.querySelectorAll('.recipe-add-form').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const result = await submitInventoryForm(form);
+                const recipe = result.recipe;
+                const list = form.closest('.recipe-card').querySelector('ul');
+                list.querySelector('.recipe-empty')?.remove();
+                let row = list.querySelector(`[data-inventory-id="${recipe.inventory_item_id}"]`);
+                if (!row) {
+                    row = document.createElement('li');
+                    row.dataset.recipeId = recipe.id;
+                    row.dataset.inventoryId = recipe.inventory_item_id;
+                    const text = document.createElement('span');
+                    row.append(text);
+                    const removeForm = document.createElement('form');
+                    removeForm.method = 'POST';
+                    removeForm.action = `${@json(url('/superadmin/inventory/recipes'))}/${recipe.id}`;
+                    removeForm.innerHTML = `<input type="hidden" name="_token" value="${csrfToken}"><input type="hidden" name="_method" value="DELETE"><button class="text-button remove-button" type="submit">Remove</button>`;
+                    removeForm.addEventListener('submit', handleRecipeRemove);
+                    row.append(removeForm);
+                    list.append(row);
+                } else {
+                    row.dataset.recipeId = recipe.id;
+                }
+                row.querySelector('span').textContent = `${recipe.inventory_item_name}: ${Number(recipe.quantity_per_item)} ${recipe.unit}`;
+                showFormStatus(form, result.message);
+            } catch (error) {
+                showFormStatus(form, error.message, true);
+            }
+        });
+    });
+
+    async function handleRecipeRemove(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: new FormData(form),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.message || 'Unable to remove this recipe mapping.');
+            }
+            form.closest('[data-recipe-id]')?.remove();
+        } catch (error) {
+            showFormStatus(form, error.message, true);
+        }
+    }
+
+    document.querySelectorAll('.recipe-card li form').forEach((form) => {
+        form.addEventListener('submit', handleRecipeRemove);
+    });
+</script>
 @endsection

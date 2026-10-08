@@ -11,13 +11,64 @@
 
 ## ETIVACSILOG POS
 
-### Install and start on Windows 10
+### Start the application
 
-Copy the project folder to the Windows 10 PC and double-click `setup-windows10.bat`. It installs PHP 8.3 and Node.js LTS with WinGet when missing, installs the PHP and JavaScript dependencies, builds the frontend, prepares SQLite, runs database migrations and seeders, then starts the POS. Windows 10 needs Microsoft's App Installer (WinGet) and an internet connection for the first setup.
+Double-click `start-pos.bat`. It starts the Laravel web server and the Laravel scheduler in separate console windows. Keep both open while using the POS. Open `http://127.0.0.1:8001` in your browser.
 
-For an existing installation, also transfer its `.env`, `database/database.sqlite`, and `public/uploads` so its settings, sales, and uploaded files are retained. The setup script does not replace an existing `.env` or database.
+### Run the POS from an Android tablet (Termux)
 
-The launcher displays the PC's LAN address in the form `http://IPADDRESS:8001/posetivacsilogpos`; use that address on other devices on the same network. Allow PHP through Windows Defender Firewall on Private networks when prompted. Double-click `start-pos.bat` for later starts. It opens the POS in a browser and starts the Laravel scheduler in a separate console; keep both windows open while using the POS.
+The cashier, cart, checkout, inventory, menu, and sales pages adapt to phone and tablet screen widths. The following setup runs the Laravel POS on the tablet and makes it available to other devices on the same trusted Wi-Fi network.
+
+#### 1. Install Termux and copy the application
+
+Install Termux from F-Droid or the official Termux GitHub releases. Avoid the outdated Play Store build. Open Termux once, then grant shared-storage access when prompted:
+
+```sh
+termux-setup-storage
+```
+
+Stop the POS on the Windows computer before copying its database. Copy the current project folder to the tablet using USB or another trusted transfer method. Include the current `.env`, `database/database.sqlite`, and `public/uploads/receipts` along with the application files. Do not upload `.env` or the database to a public repository or file-sharing service.
+
+In Termux, extract or copy the project into Termux's private home directory, not directly under shared `Downloads` storage. For example, if a ZIP named `ETIVACSILOG.zip` is in Downloads:
+
+```sh
+mkdir -p "$HOME/etivacsilog"
+unzip "$HOME/storage/downloads/ETIVACSILOG.zip" -d "$HOME/etivacsilog"
+```
+
+Change into the extracted folder that contains `artisan`, `composer.json`, and `setup-android-termux.sh`. Keeping the SQLite database in Termux's private home avoids SQLite locking and Android shared-storage permission problems.
+
+#### 2. Install dependencies and migrate the database
+
+Run the setup script from the project folder:
+
+```sh
+bash setup-android-termux.sh
+```
+
+The script installs PHP, Composer, Node.js, and SQLite; builds the frontend; configures Laravel to use the copied SQLite file; and runs pending migrations without deleting existing orders, menu items, accounts, or inventory. It preserves an existing `APP_KEY` and makes a timestamped copy of a non-empty SQLite database before migrating. If this is a brand-new database, it does not seed default accounts; use an existing database with cashier/superadmin accounts, or securely create accounts before opening the POS.
+
+This setup expects the current POS SQLite database. If the live system is using MySQL, do not point this setup at an empty SQLite file expecting MySQL data to appear; export/import that database separately before using the tablet.
+
+#### 3. Start the server
+
+```sh
+bash start-android-termux.sh
+```
+
+Keep Termux open while the POS is in use. The script prints the tablet's Wi-Fi address. Open `http://127.0.0.1:8001` on the tablet itself, or open `http://TABLET-IP:8001` on a cashier device connected to the same Wi-Fi. Press Ctrl+C in Termux to stop the server. Android may stop background apps to save battery, so set Termux battery use to **Unrestricted** and keep the tablet powered during service.
+
+Use a trusted, private Wi-Fi network only. The server uses HTTP and is reachable by devices on that network; do not expose port 8001 to the public internet or configure router port forwarding. Change any development passwords before using the tablet for real sales.
+
+#### 4. Update the tablet later and back up data
+
+Stop the server with Ctrl+C before updating or copying the SQLite database. Copy the newer application files onto the tablet without replacing its `.env` or `database/database.sqlite`, then run:
+
+```sh
+bash setup-android-termux.sh
+```
+
+The setup script runs pending migrations and backs up the tablet database first. To move the live system back to another computer, stop the server and copy `database/database.sqlite`, `.env` (especially its `APP_KEY`), and `public/uploads/receipts`. Keep database backups private and store them outside the application folder too.
 
 ### Initial accounts
 

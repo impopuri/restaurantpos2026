@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MenuItem;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -32,11 +33,18 @@ class MenuController extends Controller
         return redirect()->route('superadmin.menu.index')->with('status', 'Menu item added.');
     }
 
-    public function update(Request $request, MenuItem $menuItem): RedirectResponse
+    public function update(Request $request, MenuItem $menuItem): RedirectResponse|JsonResponse
     {
         $validated = $this->validateItem($request);
         $validated['options'] = $this->parseOptions($validated['options'] ?? null);
         $menuItem->update($validated);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Menu item updated.',
+                'item' => $menuItem->only(['id', 'item_key', 'category', 'name', 'price', 'options']),
+            ]);
+        }
 
         return redirect()->route('superadmin.menu.index')->with('status', 'Menu item updated.');
     }

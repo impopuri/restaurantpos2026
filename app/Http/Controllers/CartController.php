@@ -114,6 +114,7 @@ class CartController extends Controller
             'discount_rate' => ['nullable', 'required_if:discount_type,other', 'numeric', 'min:0', 'max:100'],
             'payment_method' => ['required', 'in:cash,gcash,maya,maribank,others'],
             'payment_other' => ['nullable', 'required_if:payment_method,others', 'string', 'max:80'],
+            'cash_received' => ['nullable', 'required_if:payment_method,cash', 'numeric', 'decimal:0,2', 'min:0'],
         ]);
         $cart = $request->session()->get('cart', []);
         $products = MenuItem::with('recipes.inventoryItem')->get()->keyBy('item_key');
@@ -146,6 +147,13 @@ class CartController extends Controller
         $discountAmount = round($subtotal * $discountRate / 100, 2);
         $total = round($subtotal - $discountAmount, 2);
         $paymentMethod = $validated['payment_method'];
+        $cashReceived = $paymentMethod === 'cash' ? round((float) $validated['cash_received'], 2) : null;
+        $changeDue = $cashReceived !== null ? round($cashReceived - $total, 2) : null;
+        if ($changeDue !== null && $changeDue < 0) {
+            throw ValidationException::withMessages([
+                'cash_received' => 'Cash received must be at least the amount due.',
+            ]);
+        }
         $paymentLabel = $paymentMethod === 'others'
             ? $validated['payment_other']
             : match ($paymentMethod) {
@@ -155,7 +163,7 @@ class CartController extends Controller
                 default => 'Cash',
             };
 
-        $order = DB::transaction(function () use ($request, $validated, $items, $products, $subtotal, $discountRate, $discountLabel, $discountAmount, $total, $paymentMethod): Order {
+        $order = DB::transaction(function () use ($request, $validated, $items, $products, $subtotal, $discountRate, $discountLabel, $discountAmount, $total, $paymentMethod, $cashReceived, $changeDue): Order {
             $requiredStock = [];
             foreach ($items as $cartKey => $quantity) {
                 [$itemKey] = explode('|', $cartKey, 2);
@@ -194,6 +202,8 @@ class CartController extends Controller
                 'total' => $total,
                 'payment_method' => $paymentMethod,
                 'payment_other' => $paymentMethod === 'others' ? $validated['payment_other'] : null,
+                'cash_received' => $cashReceived,
+                'change_due' => $changeDue,
                 'paid_at' => now(),
             ]);
 
@@ -247,6 +257,8 @@ class CartController extends Controller
                 'discount_amount' => number_format($discountAmount, 2),
                 'total' => number_format($total, 2),
                 'payment_method' => $paymentLabel,
+                'cash_received' => $cashReceived !== null ? number_format($cashReceived, 2) : null,
+                'change_due' => $changeDue !== null ? number_format($changeDue, 2) : null,
                 'kitchen_note' => $order->kitchen_note,
             ]);
         }

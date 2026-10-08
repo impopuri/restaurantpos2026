@@ -59,4 +59,46 @@
         @endforeach
     </section>
 </main>
+<script>
+    document.querySelectorAll('.menu-admin-row').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const button = form.querySelector('button[type="submit"]');
+            const originalText = button.textContent;
+            let status = form.querySelector('[data-form-status]');
+            if (!status) {
+                status = document.createElement('span');
+                status.dataset.formStatus = '';
+                status.setAttribute('role', 'status');
+                form.append(status);
+            }
+            status.textContent = '';
+            button.disabled = true;
+            button.textContent = 'Saving...';
+
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: new FormData(form),
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || 'Unable to save menu item.');
+                }
+                status.textContent = 'Saved. Updates will be used in the menu and cart.';
+            } catch (error) {
+                status.textContent = error.message;
+                status.setAttribute('role', 'alert');
+                status.classList.add('field-error');
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        });
+    });
+</script>
 @endsection

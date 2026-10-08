@@ -31,7 +31,9 @@ class CartAndKitchenTest extends TestCase
         $this->get(route('cart'))
             ->assertOk()
             ->assertSee('Tohsilog')
-            ->assertSee('value="2"', false);
+            ->assertSee('value="2"', false)
+            ->assertSee('Pay amount')
+            ->assertSee('Exact amount');
 
         $this->patch(route('cart.update', 'tohsilog'), ['quantity' => 3])
             ->assertRedirect(route('cart'));
@@ -40,6 +42,7 @@ class CartAndKitchenTest extends TestCase
             'kitchen_note' => 'No onions, please.',
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '250.00',
         ])->assertRedirect(route('kitchen'));
 
         $order = Order::with('items')->firstOrFail();
@@ -87,6 +90,7 @@ class CartAndKitchenTest extends TestCase
         $this->post(route('checkout'), [
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '10.00',
         ])
             ->assertRedirect(route('kitchen'));
 
@@ -144,6 +148,43 @@ class CartAndKitchenTest extends TestCase
             'total' => '55.20',
             'payment_method' => 'gcash',
         ]);
+    }
+
+    public function test_cash_payment_records_received_amount_and_change_on_receipt(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->post(route('cart.add'), ['product_key' => 'tohsilog']);
+
+        $this->postJson(route('checkout'), [
+            'discount_type' => 'none',
+            'payment_method' => 'cash',
+            'cash_received' => '100.00',
+        ])->assertOk()->assertJson([
+            'total' => '69.00',
+            'cash_received' => '100.00',
+            'change_due' => '31.00',
+        ]);
+
+        $this->assertDatabaseHas('orders', [
+            'payment_method' => 'cash',
+            'cash_received' => '100.00',
+            'change_due' => '31.00',
+        ]);
+    }
+
+    public function test_cash_checkout_rejects_less_than_the_amount_due(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->post(route('cart.add'), ['product_key' => 'tohsilog']);
+
+        $this->postJson(route('checkout'), [
+            'discount_type' => 'none',
+            'payment_method' => 'cash',
+            'cash_received' => '68.99',
+        ])->assertUnprocessable()->assertJsonValidationErrors('cash_received');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertSame(1, array_sum(session('cart')));
     }
 
     public function test_custom_discount_and_other_payment_require_names(): void

@@ -28,7 +28,7 @@
                     @endforeach
                 </select>
             </form>
-            <a class="secondary-button dashboard-export-button" href="{{ route('dashboard.export', ['period' => $period]) }}" download>Export Excel report</a>
+            <a class="secondary-button dashboard-export-button" href="{{ route('dashboard.export', ['period' => $period]) }}" download>Export CSV report</a>
         </div>
 
         <p class="dashboard-period-label">{{ $periodLabel }} sales</p>

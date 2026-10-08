@@ -67,44 +67,33 @@ class DashboardController extends Controller
 
         $orders = Order::query()->whereNotNull('paid_at')->where('status', '!=', 'voided');
         $this->applyPeriod($orders, $from, $to);
-        $summary = (clone $orders)
-            ->selectRaw('COUNT(*) as order_count, COALESCE(SUM(total), 0) as sales_total, COALESCE(SUM(discount_amount), 0) as discount_total')
-            ->first();
-
-        return response()->streamDownload(function () use ($orders, $summary, $period): void {
+        return response()->streamDownload(function () use ($orders, $period): void {
             $output = fopen('php://output', 'w');
             fwrite($output, "\xEF\xBB\xBF");
             fputcsv($output, ['ETIVACSILOG POS Sales Report']);
             fputcsv($output, ['Period', $this->periodLabel($period)]);
-            fputcsv($output, ['Net sales', $summary->sales_total]);
-            fputcsv($output, ['Paid orders', $summary->order_count]);
-            fputcsv($output, ['Discounts given', $summary->discount_total]);
-            fputcsv($output, []);
-            fputcsv($output, ['Order ID', 'Paid at', 'Cashier', 'Payment method', 'Items', 'Subtotal', 'Discount', 'Total']);
+            fputcsv($output, ['Date', 'Time', 'Item', 'Quantity', 'Total Price']);
+            $totalQuantity = 0;
+            $totalPrice = 0.0;
 
             $orders->with([
-                'user:id,username',
                 'items:id,order_id,name,quantity,unit_price',
-            ])->orderBy('paid_at')->lazyById(200)->each(function (Order $order) use ($output): void {
-                $items = $order->items
-                    ->map(fn ($item) => $item->name.' x'.$item->quantity)
-                    ->implode('; ');
-                $paymentMethod = $order->payment_method === 'other'
-                    ? 'Other: '.$order->payment_other
-                    : $order->payment_method;
-
-                fputcsv($output, array_map($this->spreadsheetSafeCell(...), [
-                    $order->id,
-                    $order->paid_at?->format('Y-m-d H:i:s'),
-                    $order->user?->username,
-                    $paymentMethod,
-                    $items,
-                    $order->subtotal,
-                    $order->discount_amount,
-                    $order->total,
-                ]));
+            ])->orderBy('paid_at')->lazyById(200)->each(function (Order $order) use ($output, &$totalQuantity, &$totalPrice): void {
+                foreach ($order->items as $item) {
+                    $itemTotal = (float) $item->unit_price * $item->quantity;
+                    $totalQuantity += $item->quantity;
+                    $totalPrice += $itemTotal;
+                    fputcsv($output, array_map($this->spreadsheetSafeCell(...), [
+                        $order->paid_at?->format('Y-m-d'),
+                        $order->paid_at?->format('H:i:s'),
+                        $item->name,
+                        $item->quantity,
+                        number_format($itemTotal, 2, '.', ''),
+                    ]));
+                }
             });
 
+            fputcsv($output, ['TOTAL', '', '', $totalQuantity, number_format($totalPrice, 2, '.', '')]);
             fclose($output);
         }, now()->format('Ymd').'.csv', [
             'Content-Type' => 'text/csv; charset=UTF-8',

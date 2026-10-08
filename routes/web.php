@@ -15,7 +15,6 @@ use App\Http\Controllers\ReceiptSettingController;
 use App\Http\Controllers\SuperAdminController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('posetivacsilogpos')->group(function () {
 Route::middleware('guest')->group(function () {
     Route::get('/', [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login'])->name('login.store');
@@ -25,6 +24,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/dashboard/export', [DashboardController::class, 'export'])->name('dashboard.export');
     Route::get('/pos', PosController::class)->name('pos');
+    Route::get('/inventory', fn () => redirect()->route('superadmin.inventory'))
+        ->middleware('superadmin')
+        ->name('inventory.shortcut');
     Route::get('/cart', [CartController::class, 'index'])->name('cart');
     Route::post('/cart/items', [CartController::class, 'add'])->name('cart.add');
     Route::patch('/cart/items/{productKey}', [CartController::class, 'update'])->name('cart.update');
@@ -60,5 +62,4 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-});
 });

@@ -77,39 +77,33 @@ class DashboardTest extends TestCase
 
     public function test_dashboard_requires_authentication(): void
     {
-        $this->get(route('dashboard'))->assertRedirect(route('login'));
+        $this->get(route('dashboard'))->assertRedirect('/');
     }
 
-    public function test_dashboard_export_downloads_selected_period_as_excel_compatible_csv(): void
+    public function test_sales_csv_lists_items_and_ends_with_quantity_and_price_totals(): void
     {
-        $cashier = User::factory()->create(['username' => 'cashier']);
-        $this->actingAs($cashier);
+        $this->actingAs(User::factory()->create());
         $order = Order::create([
-            'user_id' => $cashier->id,
+            'user_id' => auth()->id(),
             'status' => 'pending',
-            'subtotal' => 140,
-            'discount_amount' => 10,
-            'total' => 130,
-            'payment_method' => 'cash',
-            'paid_at' => now(),
+            'subtotal' => 188,
+            'discount_amount' => 0,
+            'total' => 188,
+            'paid_at' => now()->setTime(14, 5, 9),
         ]);
-        $order->items()->create([
-            'product_key' => 'tohsilog',
-            'category' => 'MEALS',
-            'name' => 'Tohsilog',
-            'unit_price' => 140,
-            'quantity' => 1,
+        $order->items()->createMany([
+            ['product_key' => 'tohsilog', 'category' => 'MEALS', 'name' => 'Tohsilog', 'unit_price' => 69, 'quantity' => 2],
+            ['product_key' => 'fries', 'category' => 'SNACKS', 'name' => 'Fries', 'unit_price' => 50, 'quantity' => 1],
         ]);
 
-        $response = $this->get(route('dashboard.export', ['period' => 'today']));
+        $response = $this->get(route('dashboard.export', ['period' => 'today']))
+            ->assertOk()
+            ->assertDownload();
+        $csv = array_map('str_getcsv', array_filter(explode("\n", trim($response->streamedContent()))));
 
-        $response->assertOk()
-            ->assertHeader('content-type', 'text/csv; charset=UTF-8')
-            ->assertHeader('content-disposition', 'attachment; filename='.now()->format('Ymd').'.csv');
-
-        $this->assertStringContainsString('ETIVACSILOG POS Sales Report', $response->streamedContent());
-        $this->assertStringContainsString('Tohsilog x1', $response->streamedContent());
-        $this->assertStringContainsString('cash', $response->streamedContent());
-        $this->assertStringContainsString('130', $response->streamedContent());
+        $this->assertSame(['Date', 'Time', 'Item', 'Quantity', 'Total Price'], $csv[2]);
+        $this->assertSame([now()->format('Y-m-d'), '14:05:09', 'Tohsilog', '2', '138.00'], $csv[3]);
+        $this->assertSame([now()->format('Y-m-d'), '14:05:09', 'Fries', '1', '50.00'], $csv[4]);
+        $this->assertSame(['TOTAL', '', '', '3', '188.00'], $csv[5]);
     }
 }

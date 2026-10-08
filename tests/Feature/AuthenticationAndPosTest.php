@@ -12,13 +12,13 @@ class AuthenticationAndPosTest extends TestCase
 
     public function test_guests_are_sent_to_the_login_page(): void
     {
-        $this->get(route('pos'))
-            ->assertRedirect(route('login'));
+        $this->get('/pos')
+            ->assertRedirect('/');
     }
 
     public function test_invalid_credentials_are_rejected(): void
     {
-        $this->post(route('login.store'), [
+        $this->post('/login', [
             'identifier' => 'cashier',
             'password' => 'wrong-password',
         ])
@@ -32,13 +32,13 @@ class AuthenticationAndPosTest extends TestCase
             'email' => 'cashier@example.com',
         ]);
 
-        $this->post(route('login.store'), [
+        $this->post('/login', [
             'identifier' => 'cashier',
             'password' => 'password',
         ])
-            ->assertRedirect(route('pos'));
+            ->assertRedirect('/pos');
 
-        $this->get(route('pos'))
+        $this->get('/pos')
             ->assertOk()
             ->assertSee('Welcome, cashier!')
             ->assertSee('Meals')
@@ -46,11 +46,11 @@ class AuthenticationAndPosTest extends TestCase
             ->assertSee('Drinks')
             ->assertSee('Extras');
 
-        $this->post(route('logout'))
-            ->assertRedirect(route('login'));
+        $this->post('/logout')
+            ->assertRedirect('/');
 
-        $this->get(route('pos'))
-            ->assertRedirect(route('login'));
+        $this->get('/pos')
+            ->assertRedirect('/');
     }
 
     public function test_superadmin_login_redirects_to_admin_area(): void
@@ -62,7 +62,7 @@ class AuthenticationAndPosTest extends TestCase
             'role' => 'superadmin',
         ]);
 
-        $this->post(route('login.store'), [
+        $this->post('/login', [
             'identifier' => 'superadmin',
             'password' => 'password',
         ])->assertRedirect(route('superadmin.dashboard'));

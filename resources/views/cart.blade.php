@@ -76,6 +76,7 @@
                         <input type="hidden" name="discount_rate" value="0">
                         <input type="hidden" name="payment_method">
                         <input type="hidden" name="payment_other">
+                        <input type="hidden" name="cash_received">
                         <div class="cart-total">
                             <span>Order total</span>
                             <strong data-cart-total>₱{{ number_format($total, 2) }}</strong>
@@ -186,6 +187,14 @@
                 <label for="payment-other">Payment method name</label>
                 <input id="payment-other" type="text" maxlength="80" placeholder="Enter payment method">
             </div>
+            <div id="cash-payment-fields" class="cash-payment-fields" hidden>
+                <label for="cash-received-input">Pay amount</label>
+                <div class="cash-amount-entry">
+                    <input id="cash-received-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Enter amount received">
+                    <button class="secondary-button" type="button" id="exact-amount">Exact amount</button>
+                </div>
+                <p class="cash-change">Change <strong id="cash-change">₱0.00</strong></p>
+            </div>
             <p class="payment-confirm-total">Amount due <strong id="payment-total">₱0.00</strong></p>
             <p class="payment-error" id="payment-error" role="alert"></p>
             <footer class="modal-actions">
@@ -220,6 +229,7 @@
                 <button class="secondary-button" type="button" id="copy-receipt">Copy</button>
                 <button class="secondary-button" type="button" id="print-receipt">Print</button>
                 <button class="primary-button" type="button" id="save-receipt">Save as PNG</button>
+                <button class="primary-button" type="button" id="new-order">Make a new order</button>
             </footer>
         </section>
     </dialog>
@@ -232,9 +242,19 @@
         const discountType = document.querySelector('#discount-type');
         const receiptSettings = @json($receiptSettings->toArray());
         const receiptQrUrl = @json($receiptSettings->survey_qr_path ? asset('uploads/receipts/'.$receiptSettings->survey_qr_path) : null);
+        const posUrl = @json(route('pos'));
         let paidReceipt = null;
 
         const money = (amount) => `₱${Number(amount).toFixed(2)}`;
+        const amountDue = () => Number(document.querySelector('#payment-total').textContent.replace(/[^\d.]/g, ''));
+        const cashReceivedInput = document.querySelector('#cash-received-input');
+        const cashChange = document.querySelector('#cash-change');
+        const cashPaymentFields = document.querySelector('#cash-payment-fields');
+        const paymentMethodInput = document.querySelector('#payment-method');
+        const updateCashChange = () => {
+            const received = Number(cashReceivedInput.value);
+            cashChange.textContent = money(Number.isFinite(received) ? Math.max(0, received - amountDue()) : 0);
+        };
         const currentItems = () => [...document.querySelectorAll('.cart-item')].map((row) => ({
             name: row.querySelector('.cart-item-info h2').textContent.trim(),
             price: Number(row.dataset.unitPrice),
@@ -306,12 +326,24 @@
             summaryDialog.showModal();
         });
 
-        document.querySelector('#payment-method').addEventListener('change', (event) => {
+        paymentMethodInput.addEventListener('change', (event) => {
             document.querySelector('#other-payment-field').hidden = event.target.value !== 'others';
+            cashPaymentFields.hidden = event.target.value !== 'cash';
+            document.querySelector('#payment-error').textContent = '';
+            updateCashChange();
+        });
+
+        cashReceivedInput.addEventListener('input', () => {
+            document.querySelector('#payment-error').textContent = '';
+            updateCashChange();
+        });
+        document.querySelector('#exact-amount').addEventListener('click', () => {
+            cashReceivedInput.value = amountDue().toFixed(2);
+            updateCashChange();
         });
 
         document.querySelector('#confirm-payment').addEventListener('click', async () => {
-            const method = document.querySelector('#payment-method').value;
+            const method = paymentMethodInput.value;
             const otherMethod = document.querySelector('#payment-other').value.trim();
             const error = document.querySelector('#payment-error');
             error.textContent = '';
@@ -323,9 +355,15 @@
                 error.textContent = 'Enter the payment method name.';
                 return;
             }
+            const cashReceived = Number(cashReceivedInput.value);
+            if (method === 'cash' && (!cashReceivedInput.value || !Number.isFinite(cashReceived) || cashReceived < amountDue())) {
+                error.textContent = 'Enter an amount that is at least the amount due.';
+                return;
+            }
 
             checkoutForm.elements.payment_method.value = method;
             checkoutForm.elements.payment_other.value = otherMethod;
+            checkoutForm.elements.cash_received.value = method === 'cash' ? cashReceived.toFixed(2) : '';
             const button = document.querySelector('#confirm-payment');
             button.disabled = true;
             button.textContent = 'Processing...';
@@ -365,7 +403,7 @@
             document.querySelector('#receipt-footer').textContent = receiptSettings.footer || '';
             document.querySelector('#receipt-meta').textContent = `Order #${receipt.order_id}\n${receipt.date}\nCashier: ${receipt.cashier}`;
             document.querySelector('#receipt-lines').innerHTML = receipt.items.map((item) => `<div><span>${item.quantity} × ${escapeHtml(item.name)}<small>${money(item.unit_price)} each</small></span><strong>${money(item.line_total)}</strong></div>`).join('');
-            document.querySelector('#receipt-calculations').innerHTML = `<div><span>Subtotal</span><strong>${money(receipt.subtotal)}</strong></div>${receipt.discount_label ? `<div><span>${escapeHtml(receipt.discount_label)} discount (${receipt.discount_rate}%)</span><strong>−${money(receipt.discount_amount)}</strong></div>` : ''}<div class="receipt-total"><span>Total paid</span><strong>${money(receipt.total)}</strong></div>`;
+            document.querySelector('#receipt-calculations').innerHTML = `<div><span>Subtotal</span><strong>${money(receipt.subtotal)}</strong></div>${receipt.discount_label ? `<div><span>${escapeHtml(receipt.discount_label)} discount (${receipt.discount_rate}%)</span><strong>−${money(receipt.discount_amount)}</strong></div>` : ''}<div class="receipt-total"><span>Total due</span><strong>${money(receipt.total)}</strong></div>${receipt.cash_received !== null ? `<div><span>Cash received</span><strong>${money(receipt.cash_received)}</strong></div><div><span>Change</span><strong>${money(receipt.change_due)}</strong></div>` : ''}`;
             document.querySelector('#receipt-payment').textContent = `Paid via ${receipt.payment_method}`;
         }
 
@@ -381,7 +419,9 @@
                 ...paidReceipt.items.map((item) => `${item.quantity} x ${item.name} - ${money(item.line_total)}`),
                 `Subtotal: ${money(paidReceipt.subtotal)}`,
                 ...(paidReceipt.discount_label ? [`${paidReceipt.discount_label} discount (${paidReceipt.discount_rate}%): -${money(paidReceipt.discount_amount)}`] : []),
-                `Total paid: ${money(paidReceipt.total)}`, `Payment: ${paidReceipt.payment_method}`,
+                `Total due: ${money(paidReceipt.total)}`,
+                ...(paidReceipt.cash_received !== null ? [`Cash received: ${money(paidReceipt.cash_received)}`, `Change: ${money(paidReceipt.change_due)}`] : []),
+                `Payment: ${paidReceipt.payment_method}`,
                 ...(paidReceipt.kitchen_note ? [`Kitchen note: ${paidReceipt.kitchen_note}`] : []),
                 ...(receiptSettings.survey_url ? [`Survey: ${receiptSettings.survey_url}`] : []),
                 ...(receiptSettings.footer ? [receiptSettings.footer] : []),
@@ -396,6 +436,7 @@
 
         document.querySelector('#print-receipt').addEventListener('click', () => window.print());
         document.querySelector('#save-receipt').addEventListener('click', () => saveReceiptPng(paidReceipt));
+        document.querySelector('#new-order').addEventListener('click', () => window.location.assign(posUrl));
 
         async function saveReceiptPng(receipt) {
             if (!receipt) return;
@@ -415,7 +456,7 @@
             const padding = 40;
             const lineHeight = 32;
             const itemLines = receipt.items.length;
-            const height = 570 + itemLines * 58 + (receipt.discount_label ? 40 : 0) + (receipt.kitchen_note ? 55 : 0) + (qrImage ? 155 : 0);
+            const height = 570 + itemLines * 58 + (receipt.discount_label ? 40 : 0) + (receipt.cash_received !== null ? 72 : 0) + (receipt.kitchen_note ? 55 : 0) + (qrImage ? 155 : 0);
             canvas.width = Math.round(width * scale);
             canvas.height = Math.round(height * scale);
             context.fillStyle = '#ffffff';
@@ -452,7 +493,11 @@
             };
             row('Subtotal', `₱${receipt.subtotal}`);
             if (receipt.discount_label) row(`${receipt.discount_label} discount (${receipt.discount_rate}%)`, `-₱${receipt.discount_amount}`);
-            row('Total paid', `₱${receipt.total}`, true);
+            row('Total due', `₱${receipt.total}`, true);
+            if (receipt.cash_received !== null) {
+                row('Cash received', `₱${receipt.cash_received}`);
+                row('Change', `₱${receipt.change_due}`, true);
+            }
             row(`Payment: ${receipt.payment_method}`, '');
             if (qrImage) {
                 const qrSize = 112;

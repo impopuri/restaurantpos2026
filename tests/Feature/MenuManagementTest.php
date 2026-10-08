@@ -38,6 +38,7 @@ class MenuManagementTest extends TestCase
         $this->postJson(route('checkout'), [
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '10000.00',
         ])->assertOk()->assertJsonPath('items.0.name', 'Fries - Plain')
             ->assertJsonPath('items.1.name', 'Fries - Cheese');
 
@@ -83,6 +84,27 @@ class MenuManagementTest extends TestCase
 
         $this->delete(route('superadmin.menu.destroy', $item))->assertRedirect(route('superadmin.menu.index'));
         $this->assertDatabaseMissing('menu_items', ['id' => $item->id]);
+    }
+
+    public function test_ajax_menu_update_is_used_by_the_existing_cart(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'superadmin']));
+        $item = \App\Models\MenuItem::where('item_key', 'tohsilog')->firstOrFail();
+        $this->post(route('cart.add'), ['product_key' => $item->item_key]);
+
+        $this->postJson(route('superadmin.menu.update', $item), [
+            '_method' => 'PUT',
+            'name' => 'Updated Tohsilog',
+            'category' => $item->category,
+            'price' => '75.00',
+            'options' => '',
+        ])->assertOk()->assertJsonPath('item.name', 'Updated Tohsilog')
+            ->assertJsonPath('item.price', '75.00');
+
+        $this->get(route('cart'))
+            ->assertOk()
+            ->assertSee('Updated Tohsilog')
+            ->assertSee('₱75.00');
     }
 
     public function test_choice_must_belong_to_the_selected_menu_item(): void

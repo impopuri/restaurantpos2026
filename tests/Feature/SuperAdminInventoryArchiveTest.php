@@ -28,6 +28,7 @@ class SuperAdminInventoryArchiveTest extends TestCase
             ->assertOk()
             ->assertSee('Administration');
         $this->get(route('superadmin.inventory'))->assertOk()->assertSee('Eggs');
+        $this->get('/inventory')->assertRedirect(route('superadmin.inventory'));
         $this->get(route('superadmin.menu.index'))->assertOk()->assertSee('Manage menu');
         $this->get(route('superadmin.accounts'))->assertOk()->assertSee('Create account');
         $this->get(route('superadmin.accounts'))->assertDontSee('Email');
@@ -42,6 +43,31 @@ class SuperAdminInventoryArchiveTest extends TestCase
 
         $this->assertDatabaseHas('users', ['username' => 'new-cashier', 'role' => 'cashier']);
         $this->assertNotEmpty(\App\Models\User::where('username', 'new-cashier')->value('email'));
+    }
+
+    public function test_inventory_stock_can_be_saved_without_redirecting_and_is_returned_to_the_page(): void
+    {
+        $admin = User::factory()->create(['role' => 'superadmin']);
+        $egg = InventoryItem::where('item_key', 'egg')->firstOrFail();
+        $egg->update(['quantity' => 10]);
+
+        $this->actingAs($admin)
+            ->postJson(route('superadmin.inventory.adjust', $egg), [
+                'adjustment' => 2,
+                'direction' => 'add',
+                'low_stock_threshold' => 4,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'quantity' => '12.000',
+                'low_stock_threshold' => '4.000',
+            ]);
+
+        $this->assertDatabaseHas('inventory_items', [
+            'id' => $egg->id,
+            'quantity' => '12.000',
+            'low_stock_threshold' => '4.000',
+        ]);
     }
 
     public function test_meal_and_extra_checkout_deducts_recipe_stock_and_records_movements(): void
@@ -60,6 +86,7 @@ class SuperAdminInventoryArchiveTest extends TestCase
         $this->postJson(route('checkout'), [
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '10000.00',
         ])->assertOk();
 
         $this->assertEquals(7, $egg->fresh()->quantity);
@@ -82,6 +109,7 @@ class SuperAdminInventoryArchiveTest extends TestCase
         $this->postJson(route('checkout'), [
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '10000.00',
         ])->assertUnprocessable()->assertJsonValidationErrors('inventory');
 
         $this->assertDatabaseCount('orders', 0);
@@ -121,6 +149,7 @@ class SuperAdminInventoryArchiveTest extends TestCase
         $this->postJson(route('checkout'), [
             'discount_type' => 'none',
             'payment_method' => 'cash',
+            'cash_received' => '10000.00',
         ])->assertOk();
 
         $this->assertEquals(19, $siomaiStock->fresh()->quantity);

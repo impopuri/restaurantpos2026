@@ -7,6 +7,7 @@ use App\Models\InventoryMovement;
 use App\Models\InventoryRecipe;
 use App\Models\MenuItem;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -25,7 +26,7 @@ class InventoryController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120', 'unique:inventory_items,name'],
@@ -34,12 +35,19 @@ class InventoryController extends Controller
         ]);
         $data['item_key'] = \Illuminate\Support\Str::slug($data['name']).'-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(5));
         $data['quantity'] = 0;
-        InventoryItem::create($data);
+        $item = InventoryItem::create($data);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Inventory item added.',
+                'item' => $item->only(['id', 'name', 'unit', 'quantity', 'low_stock_threshold']),
+            ], 201);
+        }
 
         return redirect()->route('superadmin.inventory')->with('status', 'Inventory item added. Enter opening stock below.');
     }
 
-    public function adjust(Request $request, InventoryItem $inventoryItem): RedirectResponse
+    public function adjust(Request $request, InventoryItem $inventoryItem): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
             'adjustment' => ['required', 'numeric', 'gt:0', 'max:999999999'],
@@ -64,10 +72,20 @@ class InventoryController extends Controller
             ]);
         });
 
+        if ($request->expectsJson()) {
+            $inventoryItem->refresh();
+
+            return response()->json([
+                'message' => 'Stock quantity updated.',
+                'quantity' => number_format((float) $inventoryItem->quantity, 3, '.', ''),
+                'low_stock_threshold' => number_format((float) $inventoryItem->low_stock_threshold, 3, '.', ''),
+            ]);
+        }
+
         return redirect()->route('superadmin.inventory')->with('status', 'Stock quantity updated.');
     }
 
-    public function storeRecipe(Request $request): RedirectResponse
+    public function storeRecipe(Request $request): RedirectResponse|JsonResponse
     {
         $data = $request->validate([
             'menu_item_id' => ['required', 'integer', function (string $attribute, mixed $value, \Closure $fail): void {
@@ -80,17 +98,38 @@ class InventoryController extends Controller
             'quantity_per_item' => ['required', 'numeric', 'gt:0', 'max:999999'],
         ]);
 
-        InventoryRecipe::updateOrCreate(
+        $recipe = InventoryRecipe::updateOrCreate(
             ['menu_item_id' => $data['menu_item_id'], 'inventory_item_id' => $data['inventory_item_id']],
             ['quantity_per_item' => $data['quantity_per_item']],
         );
 
+        if ($request->expectsJson()) {
+            $recipe->load(['inventoryItem', 'menuItem']);
+
+            return response()->json([
+                'message' => 'Recipe usage saved.',
+                'recipe' => [
+                    'id' => $recipe->id,
+                    'menu_item_id' => $recipe->menu_item_id,
+                    'inventory_item_id' => $recipe->inventory_item_id,
+                    'inventory_item_name' => $recipe->inventoryItem->name,
+                    'unit' => $recipe->inventoryItem->unit,
+                    'quantity_per_item' => number_format((float) $recipe->quantity_per_item, 3, '.', ''),
+                ],
+            ]);
+        }
+
         return redirect()->route('superadmin.inventory')->with('status', 'Recipe usage saved.');
     }
 
-    public function destroyRecipe(InventoryRecipe $recipe): RedirectResponse
+    public function destroyRecipe(Request $request, InventoryRecipe $recipe): RedirectResponse|JsonResponse
     {
+        $recipeId = $recipe->id;
         $recipe->delete();
+
+        if ($request->expectsJson()) {
+            return response()->json(['recipe_id' => $recipeId, 'message' => 'Recipe mapping removed.']);
+        }
 
         return redirect()->route('superadmin.inventory')->with('status', 'Recipe mapping removed.');
     }
