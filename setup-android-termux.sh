@@ -60,7 +60,7 @@ if ! grep -q '^APP_KEY=base64:' .env; then
 fi
 
 printf '%s\n' "Building browser assets..."
-npm ci --no-audit --no-fund
+npm install --no-audit --no-fund
 npm run build
 
 if [ ! -e public/storage ]; then

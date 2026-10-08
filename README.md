@@ -46,7 +46,7 @@ Run the setup script from the project folder:
 bash setup-android-termux.sh
 ```
 
-The script installs PHP, Composer, Node.js, and SQLite; builds the frontend; configures Laravel to use the copied SQLite file; and runs pending migrations without deleting existing orders, menu items, accounts, or inventory. It preserves an existing `APP_KEY` and makes a timestamped copy of a non-empty SQLite database before migrating. If this is a brand-new database, it does not seed default accounts; use an existing database with cashier/superadmin accounts, or securely create accounts before opening the POS.
+The script installs PHP, Composer, Node.js, and SQLite; reconciles and installs the npm lockfile; builds the frontend; configures Laravel to use the copied SQLite file; and runs pending migrations without deleting existing orders, menu items, accounts, or inventory. Reconciliation allows setup to recover if a transferred `package-lock.json` is older than `package.json`. It preserves an existing `APP_KEY` and makes a timestamped copy of a non-empty SQLite database before migrating. If this is a brand-new database, it does not seed default accounts; use an existing database with cashier/superadmin accounts, or securely create accounts before opening the POS.
 
 This setup expects the current POS SQLite database. If the live system is using MySQL, do not point this setup at an empty SQLite file expecting MySQL data to appear; export/import that database separately before using the tablet.
 
